@@ -1,16 +1,8 @@
 import os
 import requests
 from flask import Flask, request, render_template_string
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-
-# Allowed extensions for uploaded files
-ALLOWED_EXTENSIONS = {'m3u', 'txt'}
-
-# Check if the file is an allowed type
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 # Function to check if the URL is accessible
 def check_url(url):
@@ -23,43 +15,43 @@ def check_url(url):
     except requests.exceptions.RequestException:
         return False
 
-# Route to handle file upload or URL input
+# Route to handle form submission
 @app.route('/', methods=['GET', 'POST'])
 def index():
     if request.method == 'POST':
-        file = request.files.get('file')
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file.save(os.path.join('uploads', filename))
-            links = parse_file(os.path.join('uploads', filename))
-            dead_links = check_links(links)
-            return render_template_string(results_page(dead_links))
-        
-        # OR if the user submits links directly
-        urls = request.form.get('urls')
-        if urls:
-            links = urls.split('\n')
+        # Get M3U data entered in the textarea
+        m3u_data = request.form.get('m3u')
+        if m3u_data:
+            # Parse the M3U data and extract the URLs
+            links = parse_m3u(m3u_data)
+            # Check each link
             dead_links = check_links(links)
             return render_template_string(results_page(dead_links))
         
     return render_template_string(index_page)
 
-# Parse the M3U file and extract the URLs
-def parse_file(file_path):
+# Parse the M3U content and extract stream URLs
+def parse_m3u(m3u_data):
+    lines = m3u_data.split('\n')
     links = []
-    with open(file_path, 'r') as file:
-        lines = file.readlines()
-        for line in lines:
-            if line.startswith('http'):
-                links.append(line.strip())
+    
+    # Iterate over lines to find URLs after #EXTINF lines
+    for i in range(len(lines)):
+        line = lines[i].strip()
+        if line.startswith('#EXTINF'):
+            # Next line after #EXTINF contains the URL
+            if i + 1 < len(lines):
+                url = lines[i + 1].strip()
+                if url.startswith('http'):
+                    links.append(url)
     return links
 
 # Check each link from the list and return the dead links
 def check_links(links):
     dead_links = []
     for link in links:
-        if not check_url(link):
-            dead_links.append(link)
+        if not check_url(link.strip()):  # Strip any leading/trailing spaces
+            dead_links.append(link.strip())
     return dead_links
 
 # HTML content for the main page (index)
@@ -73,11 +65,9 @@ index_page = '''
 </head>
 <body>
     <h1>Validate M3U Streams</h1>
-    <form method="post" enctype="multipart/form-data">
-        <label for="file">Upload M3U File:</label>
-        <input type="file" name="file" id="file"><br><br>
-        <label for="urls">Or Enter URLs (One per line):</label><br>
-        <textarea name="urls" rows="10" cols="30"></textarea><br><br>
+    <p>Paste your M3U playlist below:</p>
+    <form method="post">
+        <textarea name="m3u" rows="10" cols="50"></textarea><br><br>
         <button type="submit">Validate</button>
     </form>
 </body>
